@@ -1,0 +1,24 @@
+{
+  "name": "aozorarecorder",
+  "productName": "aozorarecorder",
+  "version": "0.0.1",
+  "description": "application for aozorarecorder",
+  "main": "record.ts",
+  "scripts": {
+    "start": "ts-node record.ts"
+  },
+  "keywords": [],
+  "author": "N3-uchimura <uchimura@numthree.net>",
+  "license": "MIT",
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "iconv-lite": "^0.6.3",
+    "log4js": "^6.9.1",
+    "node-fetch": "^2.7.0",
+    "path": "^0.12.7",
+    "ts-node": "^10.9.2"
+  },
+  "devDependencies": {
+    "@types/node-fetch": "^2.6.11"
+  }
+}

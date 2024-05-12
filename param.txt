@@ -1,0 +1,20 @@
+// POSTパラメータ
+interface styleparam {
+    text: string; // 変換するテキスト
+    encoding?: string; // 文字コード
+    model_id?: number; // 使用するモデルのID Default: 0
+    speaker_id?: number; // 話者のID Default: 0
+    speaker_name?: number; // 話者の名前(speaker_idより優先)
+    sdp_ratio?: number; // SDP（Stochastic Duration Predictor）とDP（Duration Predictor）の混合比率 Default: 0.2
+    noise?: number; // サンプルノイズの割合（ランダム性を増加させる）Default: 0.6
+    noisew?: number; // SDPノイズの割合（発音の間隔のばらつきを増加させる）Default: 0.8
+    length?: number; // 話速（1が標準）Default: 1
+    language?: string; // テキストの言語 Default: JP
+    auto_split?: boolean; // 自動でテキストを分割するかどうか Default: true
+    split_interval?: number; // 分割した際の無音区間の長さ（秒）Default: 0.5
+    assist_text?: string; // 補助テキストの影響の強さ
+    assist_text_weight?: number; // 補助テキストの影響の強さ Default: 1
+    style?: string; // 音声のスタイル Default: Neutral
+    style_weight?: number; // スタイルの強さ Default: 5
+    reference_audio_path?: string; // スタイルを音声ファイルで行う
+}

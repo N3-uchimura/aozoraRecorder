@@ -5,37 +5,21 @@
 **/
 
 // モジュール
-import os from 'os'; // os
 import path from 'path'; // path
 import iconv from 'iconv-lite'; // Text converter
-import fetch from 'node-fetch'; // http
+import * as stream from 'stream';
+import { promisify } from 'util';
+import axios from 'axios';
 import log4js from 'log4js'; // logger
-import { promises } from 'fs'; // fs
+import { createWriteStream, promises } from 'fs'; // fs
 
 // ポート
 const PORT: number = 5000;
-const HOSTNAME: string = '127.0.0.1';
+//const HOSTNAME: string = '127.0.0.1';
+const HOSTNAME: string = '192.168.43.177';
 
-// POSTパラメータ
-interface styleparam {
-    text: string; // 変換するテキスト
-    encoding?: string; // 話者のID
-    model_id?: number; // 使用するモデルのID Default: 0
-    speaker_id?: number; // 話者のID Default: 0
-    speaker_name?: number; // 話者の名前(speaker_idより優先)
-    sdp_ratio?: number; // SDP（Stochastic Duration Predictor）とDP（Duration Predictor）の混合比率 Default: 0.2
-    noise?: number; // サンプルノイズの割合（ランダム性を増加させる）Default: 0.6
-    noisew?: number; // SDPノイズの割合（発音の間隔のばらつきを増加させる）Default: 0.8
-    length?: number; // 話速（1が標準）Default: 1
-    language?: string; // テキストの言語 Default: JP
-    auto_split?: boolean; // 自動でテキストを分割するかどうか Default: true
-    split_interval?: number; // 分割した際の無音区間の長さ（秒）Default: 0.5
-    assist_text?: string; // 補助テキストの影響の強さ
-    assist_text_weight?: number; // 補助テキストの影響の強さ Default: 1
-    style?: string; // 音声のスタイル Default: Neutral
-    style_weight?: number; // スタイルの強さ Default: 5
-    reference_audio_path?: string; // スタイルを音声ファイルで行う
-}
+// pipe
+const finished = promisify(stream.finished);
 
 // Logger config
 const prefix: string = `logs/${(new Date().toJSON().slice(0, 10))}.log`
@@ -56,23 +40,19 @@ const logger: any = log4js.getLogger();
 const { readFile, readdir } = promises;
 
 // 音声合成リクエスト
-const synthesisRequest = async (text: string): Promise<void> => {
+const synthesisRequest = async (filename: string, text: string): Promise<any> => {
     return new Promise(async (resolve, reject) => {
         try {
-            // テストパラメータ
-            const testparam: any = {
-                text: text,
-            };
-
             // パラメータ
-            const params: styleparam = {
-                text: text, // 変換するテキスト(必須)
-                encoding: 'utf-8',
-                speaker_id: 0,
-                model_id: 0,
-                sdp_ratio: 0.2,
-                noise: 0.6, // サンプルノイズの割合（ランダム性を増加させる）
-                noisew: 0.8, // SDPノイズの割合（発音の間隔のばらつきを増加させる）
+            const params: any = {
+                text: text, // 変換するテキスト(※必須)
+                encoding: 'utf-8', // 文字コード
+                model_id: 0, // 使用するモデルのID
+                speaker_id: 0, // 話者のID
+                // speaker_name: '', // 話者の名前(speaker_idより優先)
+                sdp_ratio: 0.2, // SDPとDPの混合比率
+                noise: 0.6, // サンプルノイズの割合（ランダム性増加）
+                noisew: 0.8, // SDPノイズの割合（発音間隔のばらつき増加）
                 length: 0.9, // 話速（1が標準）
                 language: 'JP', // テキストの言語
                 auto_split: true, // 自動でテキストを分割するかどうか
@@ -80,19 +60,28 @@ const synthesisRequest = async (text: string): Promise<void> => {
                 assist_text_weight: 1.0, // 補助テキストの影響の強さ
                 style: 'Neutral', // 音声のスタイル
                 style_weight: 5.0, // スタイルの強さ
+                // reference_audio_path: '', // スタイルを音声ファイルで行う
             }
 
-            // リクエスト
-            const response: any = await fetch(`http://${HOSTNAME}:${PORT}/voice`, {
-                method: 'post',
-                body: JSON.stringify(params),
-                headers: { 'Content-Type': 'application/json' }
-            });
-            const data = await response.json();
+            // クエリ
+            const query: any = new URLSearchParams(params);
+            // リクエストURL
+            const tmpUrl: string = `http://${HOSTNAME}:${PORT}/voice?${query}`;
+            // リクエストURL
+            const filePath: string = path.join(__dirname, 'download', filename);
+            // リクエストURL
+            const writer = createWriteStream(filePath);
 
-            console.log(data);
-            // 完了
-            resolve();
+            // GETリクエスト
+            return axios({
+                method: 'get',
+                url: tmpUrl,
+                responseType: 'stream',
+
+            }).then((response: any) => {
+                response.data.pipe(writer);
+                resolve(finished(writer)); //this is a Promise
+            });
 
         } catch (e: unknown) {
             if (e instanceof Error) {
@@ -103,22 +92,6 @@ const synthesisRequest = async (text: string): Promise<void> => {
     });
 }
 
-// test
-(async () => {
-    try {
-        // 音声リクエスト
-        await synthesisRequest('あいうえお');
-        console.log('finished.');
-
-    } catch (e: unknown) {
-        if (e instanceof Error) {
-            // エラー
-            logger.error(e.message);
-        }
-    }
-})();
-
-/*
 // main
 (async () => {
     try {
@@ -152,7 +125,7 @@ const synthesisRequest = async (text: string): Promise<void> => {
                                         return new Promise(async (resolve3, reject3) => {
                                             try {
                                                 // 音声リクエスト
-                                                await synthesisRequest(sb);
+                                                await synthesisRequest(fl, sb);
                                                 // 完了
                                                 resolve3();
 
@@ -168,7 +141,7 @@ const synthesisRequest = async (text: string): Promise<void> => {
 
                                 } else {
                                     // 音声リクエスト
-                                    await synthesisRequest(str);
+                                    await synthesisRequest(fl, str);
                                     // 完了
                                     resolve2();
                                 }
@@ -202,4 +175,3 @@ const synthesisRequest = async (text: string): Promise<void> => {
         }
     }
 })();
-*/

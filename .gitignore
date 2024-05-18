@@ -1,6 +1,6 @@
-/modify
 /node_modules
 /txt
 /logs
 /source
 /download
+package-lock.json

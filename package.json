@@ -7,6 +7,10 @@
   "scripts": {
     "start": "ts-node record.ts"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com:N3-uchimura/aozoraRecorder.git"
+  },
   "keywords": [],
   "author": "N3-uchimura <uchimura@numthree.net>",
   "license": "MIT",
@@ -15,11 +19,7 @@
     "fs": "^0.0.1-security",
     "iconv-lite": "^0.6.3",
     "log4js": "^6.9.1",
-    "node-fetch": "^2.7.0",
     "path": "^0.12.7",
     "ts-node": "^10.9.2"
-  },
-  "devDependencies": {
-    "@types/node-fetch": "^2.6.11"
   }
 }

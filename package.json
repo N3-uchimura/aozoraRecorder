@@ -5,7 +5,8 @@
   "description": "application for aozorarecorder",
   "main": "record.ts",
   "scripts": {
-    "start": "ts-node record.ts"
+    "start": "ts-node record.ts",
+    "clean": "ts-node clean.ts"
   },
   "repository": {
     "type": "git",
@@ -16,10 +17,14 @@
   "license": "MIT",
   "dependencies": {
     "axios": "^1.6.8",
+    "fluent-ffmpeg": "^2.1.2",
     "fs": "^0.0.1-security",
     "iconv-lite": "^0.6.3",
     "log4js": "^6.9.1",
     "path": "^0.12.7",
     "ts-node": "^10.9.2"
+  },
+  "devDependencies": {
+    "@types/fluent-ffmpeg": "^2.1.24"
   }
 }

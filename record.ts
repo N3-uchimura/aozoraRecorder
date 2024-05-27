@@ -11,8 +11,7 @@ import * as stream from 'stream';
 import { promisify } from 'util';
 import axios from 'axios';
 import log4js from 'log4js'; // logger
-import { createWriteStream, promises } from 'fs'; // fs
-import { setTimeout } from 'node:timers/promises'; // wait for seconds
+import { createWriteStream, promises, existsSync } from 'fs'; // fs
 
 // ポート
 const PORT: number = 5000;
@@ -23,27 +22,31 @@ const HOSTNAME: string = '127.0.0.1';
 const finished = promisify(stream.finished);
 
 // Logger config
-const prefix: string = `logs/${(new Date().toJSON().slice(0, 10))}.log`
+const prefix: string = `logs/${(new Date().toJSON().slice(0, 10))}.log`;
+const errprefix: string = `logs/err${(new Date().toJSON().slice(0, 10))}.log`;
 
-// ロガー設定
+// Logger config
 log4js.configure({
     appenders: {
         out: { type: 'stdout' },
-        system: { type: 'file', filename: prefix }
+        system: { type: 'file', filename: prefix, pattern: 'yyyyMMdd' },
+        errorRaw: { type: 'file', filename: errprefix, pattern: 'yyyyMMdd' },
+        error: { type: 'logLevelFilter', appender: 'errorRaw', level: 'error' },
     },
     categories: {
-        default: { appenders: ['out', 'system'], level: 'debug' }
+        default: { appenders: ['out', 'system', 'error'], level: 'trace' },
     }
 });
 const logger: any = log4js.getLogger();
 
 // ファイルシステム
-const { readFile, readdir } = promises;
+const { readFile, readdir, mkdir, rm } = promises;
 
 // 音声合成リクエスト
-const synthesisRequest = async (filename: string, text: string): Promise<void> => {
+const synthesisRequest = async (filename: string, text: string, outDir: string): Promise<string> => {
     return new Promise(async (resolve, reject) => {
         try {
+            logger.debug(`${filename} started.`);
             // パラメータ
             const params: any = {
                 text: text, // 変換するテキスト(※必須)
@@ -57,7 +60,7 @@ const synthesisRequest = async (filename: string, text: string): Promise<void> =
                 length: 1.1, // 話速（1が標準）
                 language: 'JP', // テキストの言語
                 auto_split: true, // 自動でテキストを分割するかどうか
-                split_interval: 1, // 分割した際の無音区間の長さ（秒）
+                split_interval: 2, // 分割した際の無音区間の長さ（秒）
                 assist_text_weight: 1.0, // 補助テキストの影響の強さ
                 style: 'Neutral', // 音声のスタイル
                 style_weight: 5.0, // スタイルの強さ
@@ -69,29 +72,25 @@ const synthesisRequest = async (filename: string, text: string): Promise<void> =
             // リクエストURL
             const tmpUrl: string = `http://${HOSTNAME}:${PORT}/voice?${query}`;
             // リクエストURL
-            const filePath: string = path.join(__dirname, 'download', filename);
+            const filePath: string = path.join(outDir, filename);
             // リクエストURL
             const writer = createWriteStream(filePath);
-
             // GETリクエスト
             await axios({
                 method: 'get',
                 url: tmpUrl,
                 responseType: 'stream',
 
-            }).then((response: any) => {
-                response.data.pipe(writer);
-                finished(writer);
+            }).then(async (response: any) => {
+                await response.data.pipe(writer);
+                await finished(writer);
+                resolve(filePath); //this is a Promise
             });
-            // wait for time
-            await setTimeout(10000);
-
-            resolve(); //this is a Promise
 
         } catch (e: unknown) {
             if (e instanceof Error) {
                 // エラー
-                reject();
+                reject('error');
             }
         }
     });
@@ -100,15 +99,59 @@ const synthesisRequest = async (filename: string, text: string): Promise<void> =
 // main
 (async () => {
     try {
+        // 開始
+        logger.info('operation started.');
+
+        // サブディレクトリ一覧
+        const allDirents: any = await readdir('tmp/', { withFileTypes: true });
+        const dirNames: any[] = allDirents.filter((dirent: any) => dirent.isDirectory()).map(({ name }: any) => name);
+
+        if (dirNames) {
+            // フォルダ内ファイルループ
+            await Promise.all(dirNames.map(async (tmps: string): Promise<void> => {
+                return new Promise(async (resolve0, reject0) => {
+                    try {
+                        // 削除対象パス
+                        const delFilePath: string = path.join(__dirname, 'tmp', tmps);
+                        logger.debug(`deleting ${tmps}`);
+                        await rm(delFilePath, { recursive: true });
+                        resolve0();
+
+                    } catch (e: unknown) {
+                        if (e instanceof Error) {
+                            logger.error(e.message);
+                            // エラー
+                            reject0();
+                        }
+                    }
+                });
+            }));
+
+        } else {
+            logger.debug('no directory in /tmp.');
+        }
+
         // ファイル一覧
         const files: string[] = await readdir('txt/');
 
-        // 全ループ
-        await Promise.all(files.map((fl: string): Promise<void> => {
+        // フォルダ内ファイルループ
+        await Promise.all(files.map(async (fl: string): Promise<void> => {
             return new Promise(async (resolve1, reject1) => {
                 try {
+                    logger.debug(`operating ${fl}`);
+                    // 一時ファイル名リスト
+                    let tmpFileNameArray: string[] = [];
                     // ファイル名
                     const fileName: string = path.parse(fl).name;
+                    // ID
+                    const fileId: string = fileName.slice(0, 5);
+                    // 保存先パス
+                    const outDirPath: string = path.join(__dirname, 'tmp', fileId);
+                    // 保存先生成
+                    if (!existsSync(outDirPath)) {
+                        await mkdir(outDirPath);
+                        logger.debug(`finished making.. ${outDirPath}`);
+                    }
                     // ファイルパス
                     const filePath: string = path.join(__dirname, 'txt', fl);
                     // ファイル読み込み
@@ -119,27 +162,37 @@ const synthesisRequest = async (filename: string, text: string): Promise<void> =
                     // 改行コードで分割
                     const strArray: string[] = str.split(/\r\n/);
 
-                    // 全処理
-                    await Promise.all(strArray.map(async (str: string, index: number): Promise<void> => {
+                    // 音声化
+                    await Promise.all(strArray.map(async (st: string, index: number): Promise<void> => {
                         return new Promise(async (resolve2, reject2) => {
                             try {
-                                if (str.trim().length == 0) {
+                                // 一時ファイル名
+                                let tmpFileName: string = '';
+
+                                // テキストなし
+                                if (st.trim().length == 0) {
                                     throw new Error('err: no length');
                                 }
+                                logger.debug(`synthesizing .. ${st}`);
                                 // インデックス
                                 const paddedIndex1: string = index.toString().padStart(3, '0');
+
                                 // 500文字以上
-                                if (str.length > 500) {
+                                if (st.length > 500) {
                                     // 改行コードで分割
-                                    const subStrArray: string[] = str.split(/。/);
-                                    // 全処理
+                                    const subStrArray: string[] = st.split(/。/);
+                                    // 音声化
                                     await Promise.all(subStrArray.map(async (sb: string, idx: number): Promise<void> => {
                                         return new Promise(async (resolve3, reject3) => {
                                             try {
                                                 // インデックス
                                                 const paddedIndex2: string = idx.toString().padStart(3, '0');
+                                                // ファイル名
+                                                tmpFileName = `${fileId}-${paddedIndex1}${paddedIndex2}.wav`;
                                                 // 音声リクエスト
-                                                await synthesisRequest(`${fileName}-${paddedIndex1}-${paddedIndex2}.wav`, sb);
+                                                await synthesisRequest(tmpFileName, sb, outDirPath);
+                                                // リスト追加
+                                                tmpFileNameArray.push(tmpFileName);
                                                 // 完了
                                                 resolve3();
 
@@ -154,15 +207,21 @@ const synthesisRequest = async (filename: string, text: string): Promise<void> =
                                     }));
 
                                 } else {
+                                    // ファイル名
+                                    tmpFileName = `${fileId}-${paddedIndex1}.wav`;
                                     // 音声リクエスト
-                                    await synthesisRequest(`${fileName}-${paddedIndex1}.wav`, str);
-                                    // 完了
-                                    resolve2();
+                                    await synthesisRequest(tmpFileName, st, outDirPath);
+                                    // リスト追加
+                                    tmpFileNameArray.push(tmpFileName);
                                 }
+                                logger.debug(`${tmpFileName} finished.`);
+                                // 完了
+                                resolve2();
 
                             } catch (e: unknown) {
                                 if (e instanceof Error) {
                                     logger.error(e.message);
+                                    // エラー
                                     reject2();
                                 }
                             }
@@ -173,7 +232,8 @@ const synthesisRequest = async (filename: string, text: string): Promise<void> =
 
                 } catch (e: unknown) {
                     if (e instanceof Error) {
-                        //logger.error(e.message);
+                        logger.error(e.message);
+                        // エラー
                         reject1();
                     }
                 }
@@ -185,7 +245,7 @@ const synthesisRequest = async (filename: string, text: string): Promise<void> =
     } catch (e: unknown) {
         if (e instanceof Error) {
             // エラー
-            //logger.error(e.message);
+            logger.error(e.message);
         }
     }
 })();
